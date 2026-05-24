@@ -1,8 +1,403 @@
-<html>
-  <head>
-    <title> IDESWEB </title>
-  </head>
-  <body>
-    <h1> IDESWEB</h1>
-  </body>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PokéCard Scanner - Evaluador de Estado</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <style>
+        :root {
+            --poke-red: #ef5350;
+            --poke-blue: #2a75d3;
+            --poke-yellow: #ffcb05;
+            --dark-bg: #212121;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .pokedex-container {
+            width: 100%;
+            max-width: 500px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            overflow: hidden;
+            border: 5px solid var(--dark-bg);
+        }
+
+        .pokedex-header {
+            background-color: var(--poke-red);
+            padding: 20px;
+            text-align: center;
+            color: white;
+            border-bottom: 5px solid var(--dark-bg);
+            position: relative;
+        }
+
+        .pokedex-header h1 {
+            margin: 0;
+            font-size: 1.8rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 2px 2px var(--dark-bg);
+        }
+
+        .pokedex-header p {
+            margin: 5px 0 0 0;
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .screen-container {
+            background-color: #b0bec5;
+            padding: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        #webcam-container {
+            width: 320px;
+            height: 320px;
+            background-color: #000;
+            border-radius: 10px;
+            border: 4px solid var(--dark-bg);
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        #webcam-container canvas, #pokedex-preload-img {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #pokedex-preload-img {
+            display: none;
+            background-color: #000;
+        }
+
+        .controls {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+            background: #fff;
+        }
+
+        .btn {
+            color: white;
+            border: 3px solid var(--dark-bg);
+            padding: 12px 30px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            width: 80%;
+            text-align: center;
+        }
+
+        .btn-start {
+            background-color: var(--poke-blue);
+            box-shadow: 0 4px 0px var(--dark-bg);
+        }
+
+        .btn-start:hover { background-color: #1f5ca8; transform: translateY(2px); box-shadow: 0 2px 0px var(--dark-bg); }
+        .btn-start:active { transform: translateY(4px); box-shadow: none; }
+
+        .btn-upload {
+            background-color: #9c27b0;
+            box-shadow: 0 4px 0px var(--dark-bg);
+            display: inline-block;
+            box-sizing: border-box;
+        }
+
+        .btn-upload:hover { background-color: #7b1fa2; transform: translateY(2px); box-shadow: 0 2px 0px var(--dark-bg); }
+        .btn-upload:active { transform: translateY(4px); box-shadow: none; }
+
+        .btn:disabled, .btn-upload.disabled {
+            background-color: #bdc3c7 !important;
+            cursor: not-allowed;
+            box-shadow: none !important;
+            transform: none !important;
+            opacity: 0.6;
+        }
+
+        .dictum-box {
+            margin: 15px 20px;
+            padding: 15px;
+            border-radius: 10px;
+            border: 3px solid var(--dark-bg);
+            background-color: #eceff1;
+            font-weight: bold;
+            text-align: center;
+            font-size: 1.1rem;
+            display: none; /* Se muestra al detectar */
+        }
+
+        /* Colores dinámicos del dictamen */
+        .dictum-damaged { background-color: #ffcdd2; color: #b71c1c; }
+        .dictum-played { background-color: #fff9c4; color: #f57f17; }
+        .dictum-mint { background-color: #c8e6c9; color: #1b5e20; }
+        .dictum-unknown { background-color: #cfd8dc; color: #37474f; }
+
+        .results-panel {
+            padding: 20px;
+            background-color: #fafafa;
+            border-top: 2px solid #eee;
+        }
+
+        .results-title {
+            font-size: 1.1rem;
+            color: var(--dark-bg);
+            margin-bottom: 15px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .prediction-bar-container {
+            margin-bottom: 12px;
+        }
+
+        .prediction-label {
+            display: flex;
+            justify-content: space-between;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #424242;
+        }
+
+        .progress-bar-bg {
+            background-color: #e0e0e0;
+            border-radius: 10px;
+            height: 18px;
+            overflow: hidden;
+            border: 1px solid #ccc;
+        }
+
+        .progress-bar-fill {
+            background-color: var(--poke-yellow);
+            height: 100%;
+            width: 0%;
+            transition: width 0.1s ease-out;
+            border-right: 2px solid var(--dark-bg);
+        }
+
+        .highest-prediction .progress-bar-fill {
+            background-color: #4caf50;
+        }
+    </style>
+</head>
+<body>
+
+<div class="pokedex-container">
+    <div class="pokedex-header">
+        <h1>PokéCard Scanner</h1>
+        <p>Evaluador de Estado Físico de Cartas</p>
+    </div>
+
+    <div class="screen-container">
+        <div id="webcam-container">
+            <img id="pokedex-preload-img" alt="Carta Subida">
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="btn btn-start" onclick="initWebcam()">Usar Cámara Web</button>
+        
+        <label for="file-input" id="label-upload" class="btn btn-upload">Subir Foto de Carta</label>
+        <input type="file" id="file-input" accept="image/*" onchange="handleImageUpload(event)" disabled style="display:none;">
+    </div>
+
+    <div id="dictum-result" class="dictum-box"></div>
+
+    <div class="results-panel">
+        <div class="results-title">Análisis de Probabilidades</div>
+        <div id="label-container"></div>
+    </div>
+</div>
+
+<script type="text/javascript">
+    // Tu enlace de Teachable Machine corregido
+    const URL = "https://teachablemachine.withgoogle.com/models/qVFGSU6GE/";
+
+    let model, webcam, labelContainer, maxPredictions;
+    let isWebcamActive = false;
+
+    async function preloadModel() {
+        const modelURL = URL + "model.json";
+        const metadataURL = URL + "metadata.json";
+        model = await tmImage.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
+        
+        document.getElementById("file-input").disabled = false;
+        createPredictionBars();
+    }
+
+    function createPredictionBars() {
+        labelContainer = document.getElementById("label-container");
+        labelContainer.innerHTML = ""; 
+        for (let i = 0; i < maxPredictions; i++) {
+            const barContainer = document.createElement("div");
+            barContainer.className = "prediction-bar-container";
+            barContainer.id = `bar-class-${i}`;
+            
+            barContainer.innerHTML = `
+                <div class="prediction-label">
+                    <span class="class-name">Cargando Clase...</span>
+                    <span class="class-percentage">0%</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill"></div>
+                </div>
+            `;
+            labelContainer.appendChild(barContainer);
+        }
+    }
+
+    async function initWebcam() {
+        const buttonStart = document.querySelector('.btn-start');
+        buttonStart.disabled = true;
+        buttonStart.innerText = "Abriendo Cámara...";
+
+        if (!model) await preloadModel();
+
+        document.getElementById("pokedex-preload-img").style.display = "none";
+
+        const flip = true; 
+        webcam = new tmImage.Webcam(320, 320, flip);
+        await webcam.setup(); 
+        await webcam.play();
+        
+        isWebcamActive = true;
+        window.requestAnimationFrame(loop);
+
+        const container = document.getElementById("webcam-container");
+        const existingCanvas = container.querySelector("canvas");
+        if (!existingCanvas) {
+            container.appendChild(webcam.canvas);
+        } else {
+            existingCanvas.style.display = "block";
+        }
+
+        buttonStart.innerText = "Cámara En Línea";
+    }
+
+    async function loop() {
+        if (isWebcamActive) {
+            webcam.update(); 
+            await predict(webcam.canvas);
+            window.requestAnimationFrame(loop);
+        }
+    }
+
+    async function handleImageUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        if (isWebcamActive) {
+            isWebcamActive = false;
+            webcam.stop();
+            const canvas = document.getElementById("webcam-container").querySelector("canvas");
+            if (canvas) canvas.style.display = "none";
+            document.querySelector('.btn-start').disabled = false;
+            document.querySelector('.btn-start').innerText = "Usar Cámara Web";
+        }
+
+        const imgElement = document.getElementById("pokedex-preload-img");
+        imgElement.src = window.URL.createObjectURL(file);
+        imgElement.style.display = "block";
+
+        imgElement.onload = async function() {
+            await predict(imgElement);
+        }
+    }
+
+    async function predict(inputSource) {
+        const prediction = await model.predict(inputSource);
+        
+        let highestIndex = 0;
+        let highestVal = 0;
+        for (let i = 0; i < maxPredictions; i++) {
+            if (prediction[i].probability > highestVal) {
+                highestVal = prediction[i].probability;
+                highestIndex = i;
+            }
+        }
+
+        // Actualizar barras de progreso gráficas
+        for (let i = 0; i < maxPredictions; i++) {
+            const classId = `bar-class-${i}`;
+            const barElement = document.getElementById(classId);
+            
+            if (barElement) {
+                const percentage = (prediction[i].probability * 100).toFixed(0);
+                barElement.querySelector('.class-name').innerText = prediction[i].className;
+                barElement.querySelector('.class-percentage').innerText = `${percentage}%`;
+                
+                const fillBar = barElement.querySelector('.progress-bar-fill');
+                fillBar.style.width = `${percentage}%`;
+
+                if (i === highestIndex && prediction[i].probability > 0.4) {
+                    barElement.classList.add('highest-prediction');
+                } else {
+                    barElement.classList.remove('highest-prediction');
+                }
+            }
+        }
+
+        // LÓGICA DE NEGOCIO CONDICIONAL SEGÚN LA CLASE DOMINANTE
+        const dictumBox = document.getElementById("dictum-result");
+        const topClass = prediction[highestIndex].className.toUpperCase().trim();
+        const topProbability = prediction[highestIndex].probability;
+
+        if (topProbability > 0.5) {
+            dictumBox.style.display = "block";
+            // Limpiar clases de estilos previas
+            dictumBox.className = "dictum-box"; 
+
+            if (topClass.includes("DAMAGED")) {
+                dictumBox.classList.add("dictum-damaged");
+                dictumBox.innerHTML = "⚠️ DICTAMEN: NO es recomendable mandar a gradear esta carta.";
+            } 
+            else if (topClass.includes("PLAYED")) {
+                dictumBox.classList.add("dictum-played");
+                dictumBox.innerHTML = "🔍 DICTAMEN: Carta con ligeros detalles. Calificación esperada: 5 - 7";
+            } 
+            else if (topClass.includes("MINT")) {
+                dictumBox.classList.add("dictum-mint");
+                dictumBox.innerHTML = "⭐ DICTAMEN: Carta en excelentes condiciones. Calificación esperada: 8 - 10";
+            } 
+            else if (topClass.includes("SIN CLASIFICACION") || topClass.includes("CLASIFICACION")) {
+                dictumBox.classList.add("dictum-unknown");
+                dictumBox.innerHTML = "❌ DICTAMEN: Tu carta o ítem no pertenece a Pokémon.";
+            }
+        } else {
+            dictumBox.style.display = "none";
+        }
+    }
+
+    preloadModel();
+</script>
+</body>
 </html>
